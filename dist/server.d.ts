@@ -10,7 +10,12 @@ export declare class Server {
     app: Application;
     port: number;
     server?: HttpServer;
+    private redis?;
     constructor();
+    /**
+     * Initialize Redis connection
+     */
+    private initializeRedis;
     /**
      * Setup Express middleware
      */
@@ -24,7 +29,7 @@ export declare class Server {
      */
     start(): Promise<void>;
     /**
-     * Stop the server
+     * Stop the server gracefully
      */
     stop(): Promise<void>;
 }
