@@ -8,6 +8,7 @@ export interface AgentSession {
   sessionId: string;
   agentId: string;
   conversationId?: string;
+  agentConversationId?: string; // ID of the agent conversation in cursor-runner
   createdAt: string;
   lastAccessedAt: string;
   metadata?: Record<string, unknown>;

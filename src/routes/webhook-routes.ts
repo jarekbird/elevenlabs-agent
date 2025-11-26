@@ -6,6 +6,7 @@ import { logger } from '../logger.js';
 import type { AgentToolRequest, CallbackPayload } from '../types/webhook.js';
 import { SessionService } from '../services/session-service.js';
 import { CursorRunnerService } from '../services/cursor-runner-service.js';
+import { AgentConversationService } from '../services/agent-conversation-service.js';
 import type Redis from 'ioredis';
 
 /**
@@ -14,6 +15,7 @@ import type Redis from 'ioredis';
 export function setupWebhookRoutes(router: Router, redis?: Redis): void {
   const sessionService = redis ? new SessionService(redis) : null;
   const cursorRunnerService = new CursorRunnerService();
+  const agentConversationService = new AgentConversationService();
   /**
    * GET /signed-url
    * Generate a signed URL for ElevenLabs agent webhook registration
@@ -108,21 +110,81 @@ export function setupWebhookRoutes(router: Router, redis?: Redis): void {
 
       // Get or create session
       let session = sessionService ? await sessionService.getSession(body.session_id) : null;
+      let agentConversationId: string | undefined;
+
       if (!session && sessionService) {
-        session = {
-          sessionId: body.session_id,
-          agentId: body.agent_id,
-          conversationId: body.conversation_id,
-          createdAt: new Date().toISOString(),
-          lastAccessedAt: new Date().toISOString(),
-        };
-        await sessionService.createOrUpdateSession(session);
+        // Create new session and agent conversation
+        try {
+          const agentConversation = await agentConversationService.createConversation(
+            body.agent_id
+          );
+          agentConversationId = agentConversation.conversationId;
+
+          session = {
+            sessionId: body.session_id,
+            agentId: body.agent_id,
+            conversationId: body.conversation_id || agentConversationId,
+            agentConversationId: agentConversationId,
+            createdAt: new Date().toISOString(),
+            lastAccessedAt: new Date().toISOString(),
+          };
+          await sessionService.createOrUpdateSession(session);
+
+          // Store the tool request as a message in the agent conversation
+          await agentConversationService.addMessage(agentConversationId, {
+            role: 'user',
+            content: `Tool request: ${body.tool_name}${body.tool_args ? ` with args: ${JSON.stringify(body.tool_args)}` : ''}`,
+            source: 'voice',
+            timestamp: new Date().toISOString(),
+          });
+        } catch (error) {
+          logger.error('Failed to create agent conversation', {
+            error: (error as Error).message,
+            sessionId: body.session_id,
+          });
+          // Continue without agent conversation if creation fails
+        }
       } else if (session && sessionService) {
         session.lastAccessedAt = new Date().toISOString();
         if (body.conversation_id) {
           session.conversationId = body.conversation_id;
         }
+        agentConversationId = session.agentConversationId;
+
+        // If session doesn't have an agent conversation ID, try to get or create one
+        if (!agentConversationId) {
+          try {
+            const agentConversation = await agentConversationService.createConversation(
+              body.agent_id
+            );
+            agentConversationId = agentConversation.conversationId;
+            session.agentConversationId = agentConversationId;
+          } catch (error) {
+            logger.error('Failed to create agent conversation for existing session', {
+              error: (error as Error).message,
+              sessionId: body.session_id,
+            });
+          }
+        }
+
         await sessionService.createOrUpdateSession(session);
+
+        // Store the tool request as a message in the agent conversation
+        if (agentConversationId) {
+          try {
+            await agentConversationService.addMessage(agentConversationId, {
+              role: 'user',
+              content: `Tool request: ${body.tool_name}${body.tool_args ? ` with args: ${JSON.stringify(body.tool_args)}` : ''}`,
+              source: 'voice',
+              timestamp: new Date().toISOString(),
+            });
+          } catch (error) {
+            logger.error('Failed to add message to agent conversation', {
+              error: (error as Error).message,
+              agentConversationId,
+            });
+          }
+        }
       }
 
       // Process tool request based on tool_name
@@ -217,22 +279,36 @@ export function setupWebhookRoutes(router: Router, redis?: Redis): void {
       if (session && sessionService) {
         // Update session with callback result
         session.lastAccessedAt = new Date().toISOString();
-        if (session.metadata) {
-          session.metadata.lastCallback = {
-            requestId: body.requestId,
-            success: body.success,
-            timestamp: body.timestamp,
-          };
-        } else {
-          session.metadata = {
-            lastCallback: {
-              requestId: body.requestId,
-              success: body.success,
-              timestamp: body.timestamp,
-            },
-          };
+        if (!session.metadata) {
+          session.metadata = {};
         }
+        session.metadata.lastCallback = {
+          requestId: body.requestId,
+          success: body.success,
+          timestamp: body.timestamp,
+        };
         await sessionService.createOrUpdateSession(session);
+
+        // Store callback result in agent conversation
+        if (session.agentConversationId) {
+          try {
+            const messageContent = body.success
+              ? `Tool execution completed: ${body.output || 'Success'}`
+              : `Tool execution failed: ${body.error || 'Unknown error'}`;
+
+            await agentConversationService.addMessage(session.agentConversationId, {
+              role: 'assistant',
+              content: messageContent,
+              source: 'text', // Use 'text' for tool outputs since frontend only supports 'voice' | 'text'
+              timestamp: new Date().toISOString(),
+            });
+          } catch (error) {
+            logger.error('Failed to add callback message to agent conversation', {
+              error: (error as Error).message,
+              agentConversationId: session.agentConversationId,
+            });
+          }
+        }
       }
 
       // TODO: Notify ElevenLabs agent via webhook/API if needed
@@ -242,6 +318,7 @@ export function setupWebhookRoutes(router: Router, redis?: Redis): void {
         conversationId: body.conversationId,
         success: body.success,
         sessionId: session?.sessionId,
+        agentConversationId: session?.agentConversationId,
       });
 
       res.json({

@@ -20,3 +20,4 @@ export default {
   coverageReporters: ['text', 'lcov', 'html'],
 };
 
+
