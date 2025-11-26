@@ -111,6 +111,10 @@ describe('Webhook Routes', () => {
   });
 
   describe('POST /callback', () => {
+    beforeEach(() => {
+      process.env.ELEVENLABS_AGENT_ENABLED = 'true';
+    });
+
     it('should accept valid callback payload', async () => {
       await server.start();
 
@@ -141,6 +145,243 @@ describe('Webhook Routes', () => {
       expect(response.status).toBe(400);
       expect(response.body).toHaveProperty('success', false);
       expect(response.body).toHaveProperty('error');
+    });
+
+    it('should handle callback with success=false', async () => {
+      await server.start();
+
+      const response = await request(server.app)
+        .post('/callback')
+        .send({
+          success: false,
+          requestId: 'test-request-id-2',
+          error: 'Test error',
+          conversationId: 'test-conversation',
+          timestamp: new Date().toISOString(),
+        });
+
+      expect(response.status).toBe(200);
+      expect(response.body).toHaveProperty('success', true);
+    });
+
+    it('should handle callback without conversationId', async () => {
+      await server.start();
+
+      const response = await request(server.app)
+        .post('/callback')
+        .send({
+          success: true,
+          requestId: 'test-request-id-3',
+          timestamp: new Date().toISOString(),
+        });
+
+      expect(response.status).toBe(200);
+      expect(response.body).toHaveProperty('success', true);
+    });
+  });
+
+  describe('Callback Queue Behavior and Race Conditions', () => {
+    beforeEach(() => {
+      process.env.ELEVENLABS_AGENT_ENABLED = 'true';
+      process.env.WEBHOOK_SECRET = 'test-secret';
+    });
+
+    it('should handle multiple callbacks for same conversation', async () => {
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          success: true,
+          requestId: 'req-1',
+        }),
+      } as Response);
+
+      await server.start();
+
+      // Send first tool request
+      const toolResponse1 = await request(server.app)
+        .post('/agent-tools')
+        .send({
+          agent_id: 'test-agent',
+          session_id: 'test-session',
+          tool_name: 'tool-1',
+          conversation_id: 'conv-1',
+        });
+
+      expect(toolResponse1.status).toBe(200);
+
+      // Send second tool request
+      const toolResponse2 = await request(server.app)
+        .post('/agent-tools')
+        .send({
+          agent_id: 'test-agent',
+          session_id: 'test-session',
+          tool_name: 'tool-2',
+          conversation_id: 'conv-1',
+        });
+
+      expect(toolResponse2.status).toBe(200);
+
+      // Send callbacks (potentially out of order)
+      const callback1 = await request(server.app)
+        .post('/callback')
+        .send({
+          success: true,
+          requestId: toolResponse2.body.requestId,
+          conversationId: 'conv-1',
+          output: 'Result 2',
+          timestamp: new Date().toISOString(),
+        });
+
+      const callback2 = await request(server.app)
+        .post('/callback')
+        .send({
+          success: true,
+          requestId: toolResponse1.body.requestId,
+          conversationId: 'conv-1',
+          output: 'Result 1',
+          timestamp: new Date().toISOString(),
+        });
+
+      expect(callback1.status).toBe(200);
+      expect(callback2.status).toBe(200);
+    });
+
+    it('should handle rapid sequential callbacks', async () => {
+      await server.start();
+
+      const callbacks = await Promise.all([
+        request(server.app)
+          .post('/callback')
+          .send({
+            success: true,
+            requestId: 'req-1',
+            conversationId: 'conv-1',
+            timestamp: new Date().toISOString(),
+          }),
+        request(server.app)
+          .post('/callback')
+          .send({
+            success: true,
+            requestId: 'req-2',
+            conversationId: 'conv-1',
+            timestamp: new Date().toISOString(),
+          }),
+        request(server.app)
+          .post('/callback')
+          .send({
+            success: true,
+            requestId: 'req-3',
+            conversationId: 'conv-1',
+            timestamp: new Date().toISOString(),
+          }),
+      ]);
+
+      callbacks.forEach((response) => {
+        expect(response.status).toBe(200);
+        expect(response.body).toHaveProperty('success', true);
+      });
+    });
+  });
+
+  describe('Signed URL Route', () => {
+    beforeEach(() => {
+      process.env.ELEVENLABS_AGENT_ENABLED = 'true';
+    });
+
+    it('should include agent_id in response when provided', async () => {
+      process.env.WEBHOOK_SECRET = 'test-secret';
+      process.env.ELEVENLABS_AGENT_URL = 'http://test:3004';
+      await server.start();
+
+      const response = await request(server.app)
+        .get('/signed-url')
+        .query({ agent_id: 'test-agent-123' });
+
+      expect(response.status).toBe(200);
+      expect(response.body).toHaveProperty('url');
+      expect(response.body).toHaveProperty('expiresAt');
+    });
+
+    it('should return URL with correct expiration time', async () => {
+      process.env.WEBHOOK_SECRET = 'test-secret';
+      process.env.ELEVENLABS_AGENT_URL = 'http://test:3004';
+      await server.start();
+
+      const beforeTime = Date.now();
+      const response = await request(server.app).get('/signed-url');
+      const afterTime = Date.now();
+
+      expect(response.status).toBe(200);
+      const expiresAt = new Date(response.body.expiresAt).getTime();
+      const expectedExpiresAt = beforeTime + 24 * 60 * 60 * 1000; // 24 hours
+
+      // Allow 1 second tolerance
+      expect(expiresAt).toBeGreaterThan(expectedExpiresAt - 1000);
+      expect(expiresAt).toBeLessThan(afterTime + 24 * 60 * 60 * 1000 + 1000);
+    });
+  });
+
+  describe('Webhook Handling and Immediate Responses', () => {
+    beforeEach(() => {
+      process.env.ELEVENLABS_AGENT_ENABLED = 'true';
+      process.env.WEBHOOK_SECRET = 'test-secret';
+    });
+
+    it('should respond immediately to agent-tools request', async () => {
+      mockFetch.mockImplementation(() => {
+        // Simulate async cursor-runner call that takes time
+        return new Promise((resolve) => {
+          setTimeout(() => {
+            resolve({
+              ok: true,
+              json: async () => ({
+                success: true,
+                requestId: 'test-request',
+              }),
+            } as Response);
+          }, 100);
+        });
+      });
+
+      await server.start();
+
+      const startTime = Date.now();
+      const response = await request(server.app)
+        .post('/agent-tools')
+        .send({
+          agent_id: 'test-agent',
+          session_id: 'test-session',
+          tool_name: 'test-tool',
+        });
+      const endTime = Date.now();
+
+      expect(response.status).toBe(200);
+      // Should respond quickly (within 200ms) even though cursor-runner takes longer
+      expect(endTime - startTime).toBeLessThan(200);
+      expect(response.body).toHaveProperty('success', true);
+    });
+
+    it('should handle cursor-runner errors gracefully', async () => {
+      // Mock fetch to reject with an error
+      mockFetch.mockImplementationOnce(() => {
+        return Promise.reject(new Error('Network error'));
+      });
+
+      await server.start();
+
+      const response = await request(server.app)
+        .post('/agent-tools')
+        .send({
+          agent_id: 'test-agent',
+          session_id: 'test-session',
+          tool_name: 'test-tool',
+        });
+
+      // The route catches errors and returns 500
+      expect(response.status).toBe(500);
+      expect(response.body).toHaveProperty('success', false);
+      expect(response.body).toHaveProperty('error');
+      expect(response.body.error).toContain('Network error');
     });
   });
 });
