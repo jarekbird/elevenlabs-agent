@@ -1,0 +1,52 @@
+services:
+  # elevenlabs-agent Node.js application service
+  elevenlabs-agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: elevenlabs-agent
+    restart: unless-stopped
+    ports:
+      - "3004:3004"
+    environment:
+      - NODE_ENV=${NODE_ENV:-production}
+      - PORT=3004
+      # ElevenLabs Agent Configuration
+      - ELEVENLABS_AGENT_URL=${ELEVENLABS_AGENT_URL:-http://elevenlabs-agent:3004}
+      - ELEVENLABS_AGENT_ID=${ELEVENLABS_AGENT_ID:-}
+      - ELEVENLABS_API_KEY=${ELEVENLABS_API_KEY:-}
+      # Webhook secret for validating incoming webhook requests
+      - WEBHOOK_SECRET=${WEBHOOK_SECRET:-}
+      # Cursor Runner URL for API calls
+      - CURSOR_RUNNER_URL=${CURSOR_RUNNER_URL:-http://cursor-runner:3001}
+      # Redis Configuration - Use shared Redis instance
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+    networks:
+      - virtual-assistant-network
+    labels:
+      - "traefik.enable=true"
+      # Webhook endpoints (no prefix stripping needed)
+      - "traefik.http.routers.elevenlabs-agent-webhooks.priority=20"
+      - "traefik.http.routers.elevenlabs-agent-webhooks.rule=Host(`${DOMAIN_NAME:-localhost}`) && (PathPrefix(`/signed-url`) || PathPrefix(`/agent-tools`) || PathPrefix(`/callback`))"
+      - "traefik.http.routers.elevenlabs-agent-webhooks.entrypoints=websecure"
+      - "traefik.http.routers.elevenlabs-agent-webhooks.tls.certresolver=letsencrypt"
+      - "traefik.http.services.elevenlabs-agent-webhooks.loadbalancer.server.port=3004"
+      # Security headers middleware
+      - "traefik.http.middlewares.elevenlabs-agent-api-headers.headers.sslredirect=true"
+      - "traefik.http.middlewares.elevenlabs-agent-api-headers.headers.stsSeconds=31536000"
+      - "traefik.http.middlewares.elevenlabs-agent-api-headers.headers.stsIncludeSubdomains=true"
+      - "traefik.http.middlewares.elevenlabs-agent-api-headers.headers.stsPreload=true"
+      # Apply security headers to webhooks
+      - "traefik.http.routers.elevenlabs-agent-webhooks.middlewares=elevenlabs-agent-api-headers"
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3004/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+networks:
+  virtual-assistant-network:
+    external: true
+    name: virtual-assistant-network
+
