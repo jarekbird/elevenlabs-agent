@@ -5,6 +5,7 @@ import { Router, type Request, type Response } from 'express';
 import { logger } from '../logger.js';
 import type { AgentToolRequest, CallbackPayload } from '../types/webhook.js';
 import { SessionService } from '../services/session-service.js';
+import { CursorRunnerService } from '../services/cursor-runner-service.js';
 import type Redis from 'ioredis';
 
 /**
@@ -12,6 +13,7 @@ import type Redis from 'ioredis';
  */
 export function setupWebhookRoutes(router: Router, redis?: Redis): void {
   const sessionService = redis ? new SessionService(redis) : null;
+  const cursorRunnerService = new CursorRunnerService();
   /**
    * GET /signed-url
    * Generate a signed URL for ElevenLabs agent webhook registration
@@ -104,25 +106,66 @@ export function setupWebhookRoutes(router: Router, redis?: Redis): void {
         return;
       }
 
-      // Create or update session
-      if (sessionService) {
-        await sessionService.createOrUpdateSession({
+      // Get or create session
+      let session = sessionService ? await sessionService.getSession(body.session_id) : null;
+      if (!session && sessionService) {
+        session = {
           sessionId: body.session_id,
           agentId: body.agent_id,
           conversationId: body.conversation_id,
           createdAt: new Date().toISOString(),
           lastAccessedAt: new Date().toISOString(),
-        });
+        };
+        await sessionService.createOrUpdateSession(session);
+      } else if (session && sessionService) {
+        session.lastAccessedAt = new Date().toISOString();
+        if (body.conversation_id) {
+          session.conversationId = body.conversation_id;
+        }
+        await sessionService.createOrUpdateSession(session);
       }
 
-      // TODO: Process tool request and forward to cursor-runner
-      // For now, return acknowledgment
-      res.json({
-        success: true,
-        message: 'Tool request received',
-        sessionId: body.session_id,
-        timestamp: new Date().toISOString(),
-      });
+      // Process tool request based on tool_name
+      const conversationId = session?.conversationId || body.conversation_id;
+      const callbackUrl = `${process.env.ELEVENLABS_AGENT_URL || 'http://elevenlabs-agent:3004'}/callback`;
+
+      // Map tool_name to cursor-runner prompt
+      // For now, treat tool_name as the action and tool_args as parameters
+      const prompt = buildPromptFromToolRequest(body);
+
+      try {
+        // Execute asynchronously with callback
+        const result = await cursorRunnerService.executeAsync(
+          {
+            prompt,
+            conversationId,
+            queueType: 'api',
+          },
+          callbackUrl
+        );
+
+        res.json({
+          success: true,
+          message: 'Tool request processed',
+          sessionId: body.session_id,
+          requestId: result.requestId,
+          timestamp: new Date().toISOString(),
+        });
+      } catch (error) {
+        const err = error as Error;
+        logger.error('Failed to process tool request with cursor-runner', {
+          error: err.message,
+          toolName: body.tool_name,
+          sessionId: body.session_id,
+        });
+
+        res.status(500).json({
+          success: false,
+          error: err.message,
+          sessionId: body.session_id,
+          timestamp: new Date().toISOString(),
+        });
+      }
     } catch (error) {
       const err = error as Error;
       logger.error('Failed to process agent tool request', {
@@ -188,5 +231,24 @@ export function setupWebhookRoutes(router: Router, redis?: Redis): void {
       });
     }
   });
+}
+
+/**
+ * Build a prompt from tool request
+ */
+function buildPromptFromToolRequest(request: AgentToolRequest): string {
+    // Convert tool_name and tool_args into a natural language prompt
+    const toolName = request.tool_name;
+    const toolArgs = request.tool_args || {};
+
+    // Basic prompt construction - can be enhanced based on specific tools
+    if (Object.keys(toolArgs).length > 0) {
+      const argsStr = Object.entries(toolArgs)
+        .map(([key, value]) => `${key}: ${JSON.stringify(value)}`)
+        .join(', ');
+      return `Execute ${toolName} with parameters: ${argsStr}`;
+    }
+
+    return `Execute ${toolName}`;
 }
 

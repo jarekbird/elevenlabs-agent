@@ -1,7 +1,11 @@
 // eslint-disable-next-line node/no-unpublished-import
-import { describe, it, expect, beforeEach, afterEach } from '@jest/globals';
+import { describe, it, expect, beforeEach, afterEach, jest } from '@jest/globals';
 import request from 'supertest';
 import { Server } from '../src/server.js';
+
+// Mock global fetch
+const mockFetch = jest.fn() as jest.MockedFunction<typeof fetch>;
+global.fetch = mockFetch as any;
 
 describe('Webhook Routes', () => {
   let server: Server;
@@ -12,6 +16,7 @@ describe('Webhook Routes', () => {
 
   afterEach(async () => {
     await server.stop();
+    jest.clearAllMocks();
   });
 
   describe('GET /signed-url', () => {
@@ -46,6 +51,16 @@ describe('Webhook Routes', () => {
     });
 
     it('should accept valid agent tool request', async () => {
+      // Mock fetch for cursor-runner call
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          success: true,
+          requestId: 'test-request-id',
+          timestamp: new Date().toISOString(),
+        }),
+      } as Response);
+
       await server.start();
 
       const response = await request(server.app)
