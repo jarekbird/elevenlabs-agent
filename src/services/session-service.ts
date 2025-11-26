@@ -121,6 +121,38 @@ export class SessionService {
   }
 
   /**
+   * Find session by conversation ID
+   */
+  async findSessionByConversationId(conversationId: string): Promise<AgentSession | null> {
+    if (!this.redisAvailable) {
+      return null;
+    }
+
+    try {
+      const pattern = `${this.SESSION_PREFIX}*`;
+      const keys = await this.redis.keys(pattern);
+
+      for (const key of keys) {
+        const value = await this.redis.get(key);
+        if (value) {
+          const session = JSON.parse(value) as AgentSession;
+          if (session.conversationId === conversationId) {
+            return session;
+          }
+        }
+      }
+
+      return null;
+    } catch (error) {
+      logger.error('Failed to find session by conversation ID', {
+        conversationId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return null;
+    }
+  }
+
+  /**
    * List all sessions for an agent
    */
   async listAgentSessions(agentId: string): Promise<AgentSession[]> {

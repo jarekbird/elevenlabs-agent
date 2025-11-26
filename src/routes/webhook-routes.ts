@@ -208,11 +208,45 @@ export function setupWebhookRoutes(router: Router, redis?: Redis): void {
         return;
       }
 
-      // TODO: Process callback and notify ElevenLabs agent
-      // For now, return acknowledgment
+      // Find session by conversationId
+      let session = null;
+      if (body.conversationId && sessionService) {
+        session = await sessionService.findSessionByConversationId(body.conversationId);
+      }
+
+      if (session && sessionService) {
+        // Update session with callback result
+        session.lastAccessedAt = new Date().toISOString();
+        if (session.metadata) {
+          session.metadata.lastCallback = {
+            requestId: body.requestId,
+            success: body.success,
+            timestamp: body.timestamp,
+          };
+        } else {
+          session.metadata = {
+            lastCallback: {
+              requestId: body.requestId,
+              success: body.success,
+              timestamp: body.timestamp,
+            },
+          };
+        }
+        await sessionService.createOrUpdateSession(session);
+      }
+
+      // TODO: Notify ElevenLabs agent via webhook/API if needed
+      // For now, log the callback
+      logger.info('Callback processed', {
+        requestId: body.requestId,
+        conversationId: body.conversationId,
+        success: body.success,
+        sessionId: session?.sessionId,
+      });
+
       res.json({
         success: true,
-        message: 'Callback received',
+        message: 'Callback received and processed',
         requestId: body.requestId,
         timestamp: new Date().toISOString(),
       });
