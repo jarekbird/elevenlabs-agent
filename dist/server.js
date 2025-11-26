@@ -5,6 +5,7 @@ import express from 'express';
 import Redis from 'ioredis';
 import { logger } from './logger.js';
 import { setupWebhookRoutes } from './routes/webhook-routes.js';
+import { setupConfigRoutes } from './routes/config-routes.js';
 /**
  * HTTP Server for elevenlabs-agent API
  */
@@ -107,6 +108,8 @@ export class Server {
         });
         // Setup webhook routes
         setupWebhookRoutes(router, this.redis);
+        // Setup config routes
+        setupConfigRoutes(router);
         this.app.use('/', router);
     }
     /**
