@@ -7,6 +7,7 @@ import type { AgentToolRequest, CallbackPayload } from '../types/webhook.js';
 import { SessionService } from '../services/session-service.js';
 import { CursorRunnerService } from '../services/cursor-runner-service.js';
 import { AgentConversationService } from '../services/agent-conversation-service.js';
+import { requireElevenLabsEnabled } from '../utils/feature-flags.js';
 import type Redis from 'ioredis';
 
 /**
@@ -21,7 +22,7 @@ export function setupWebhookRoutes(router: Router, redis?: Redis): void {
    * Generate a signed URL for ElevenLabs agent webhook registration
    * Query params: agent_id (optional)
    */
-  router.get('/signed-url', async (req: Request, res: Response) => {
+  router.get('/signed-url', requireElevenLabsEnabled, async (req: Request, res: Response) => {
     try {
       const agentId = req.query.agent_id as string | undefined;
       const webhookSecret = process.env.WEBHOOK_SECRET;
@@ -72,7 +73,7 @@ export function setupWebhookRoutes(router: Router, redis?: Redis): void {
    * Webhook endpoint for ElevenLabs agent tool requests
    * Body: AgentToolRequest
    */
-  router.post('/agent-tools', async (req: Request, res: Response) => {
+  router.post('/agent-tools', requireElevenLabsEnabled, async (req: Request, res: Response) => {
     try {
       const body = req.body as AgentToolRequest;
 
@@ -249,7 +250,7 @@ export function setupWebhookRoutes(router: Router, redis?: Redis): void {
    * Callback endpoint for cursor-runner task completion
    * Body: CallbackPayload
    */
-  router.post('/callback', async (req: Request, res: Response) => {
+  router.post('/callback', requireElevenLabsEnabled, async (req: Request, res: Response) => {
     try {
       const body = req.body as CallbackPayload;
 

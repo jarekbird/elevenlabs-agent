@@ -3,6 +3,7 @@
  */
 import { Router, type Request, type Response } from 'express';
 import { logger } from '../logger.js';
+import { requireElevenLabsEnabled } from '../utils/feature-flags.js';
 
 /**
  * Setup configuration routes
@@ -12,7 +13,7 @@ export function setupConfigRoutes(router: Router): void {
    * GET /config
    * Get current agent configuration (non-sensitive information)
    */
-  router.get('/config', (req: Request, res: Response) => {
+  router.get('/config', requireElevenLabsEnabled, (req: Request, res: Response) => {
     try {
       const config = {
         agentId: process.env.ELEVENLABS_AGENT_ID || null,
