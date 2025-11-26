@@ -1,10 +1,11 @@
 /**
  * Express server for elevenlabs-agent service
  */
-import express, { type Request, type Response, type Application } from 'express';
+import express, { type Request, type Response, type Application, type Router } from 'express';
 import type { Server as HttpServer } from 'http';
 import Redis from 'ioredis';
 import { logger } from './logger.js';
+import { setupWebhookRoutes } from './routes/webhook-routes.js';
 
 /**
  * HTTP Server for elevenlabs-agent API
@@ -79,6 +80,8 @@ export class Server {
    * Setup API routes
    */
   private setupRoutes(): void {
+    const router: Router = express.Router();
+
     // Health check endpoint with Redis connectivity status
     this.app.get('/health', async (req: Request, res: Response) => {
       logger.info('Health check requested', {
@@ -113,6 +116,10 @@ export class Server {
         redis: redisStatus,
       });
     });
+
+    // Setup webhook routes
+    setupWebhookRoutes(router);
+    this.app.use('/', router);
   }
 
   /**
