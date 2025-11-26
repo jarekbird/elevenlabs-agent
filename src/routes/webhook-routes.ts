@@ -4,11 +4,14 @@
 import { Router, type Request, type Response } from 'express';
 import { logger } from '../logger.js';
 import type { AgentToolRequest, CallbackPayload } from '../types/webhook.js';
+import { SessionService } from '../services/session-service.js';
+import type Redis from 'ioredis';
 
 /**
  * Setup webhook routes
  */
-export function setupWebhookRoutes(router: Router): void {
+export function setupWebhookRoutes(router: Router, redis?: Redis): void {
+  const sessionService = redis ? new SessionService(redis) : null;
   /**
    * GET /signed-url
    * Generate a signed URL for ElevenLabs agent webhook registration
@@ -99,6 +102,17 @@ export function setupWebhookRoutes(router: Router): void {
           error: 'Invalid webhook secret',
         });
         return;
+      }
+
+      // Create or update session
+      if (sessionService) {
+        await sessionService.createOrUpdateSession({
+          sessionId: body.session_id,
+          agentId: body.agent_id,
+          conversationId: body.conversation_id,
+          createdAt: new Date().toISOString(),
+          lastAccessedAt: new Date().toISOString(),
+        });
       }
 
       // TODO: Process tool request and forward to cursor-runner

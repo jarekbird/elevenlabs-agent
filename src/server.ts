@@ -14,7 +14,7 @@ export class Server {
   public app: Application;
   public port: number;
   public server?: HttpServer;
-  private redis?: Redis;
+  public redis?: Redis;
 
   constructor() {
     this.app = express();
@@ -118,7 +118,7 @@ export class Server {
     });
 
     // Setup webhook routes
-    setupWebhookRoutes(router);
+    setupWebhookRoutes(router, this.redis);
     this.app.use('/', router);
   }
 

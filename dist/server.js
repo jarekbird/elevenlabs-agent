@@ -106,7 +106,7 @@ export class Server {
             });
         });
         // Setup webhook routes
-        setupWebhookRoutes(router);
+        setupWebhookRoutes(router, this.redis);
         this.app.use('/', router);
     }
     /**

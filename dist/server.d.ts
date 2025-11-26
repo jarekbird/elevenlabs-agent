@@ -3,6 +3,7 @@
  */
 import { type Application } from 'express';
 import type { Server as HttpServer } from 'http';
+import Redis from 'ioredis';
 /**
  * HTTP Server for elevenlabs-agent API
  */
@@ -10,7 +11,7 @@ export declare class Server {
     app: Application;
     port: number;
     server?: HttpServer;
-    private redis?;
+    redis?: Redis;
     constructor();
     /**
      * Initialize Redis connection
