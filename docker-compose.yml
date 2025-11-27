@@ -12,6 +12,9 @@ services:
       - NODE_ENV=${NODE_ENV:-production}
       - PORT=3004
       # ElevenLabs Agent Configuration
+      # Feature flag to enable/disable ElevenLabs agent functionality
+      # When disabled, webhook and config routes return 503
+      - ELEVENLABS_AGENT_ENABLED=${ELEVENLABS_AGENT_ENABLED:-false}
       - ELEVENLABS_AGENT_URL=${ELEVENLABS_AGENT_URL:-http://elevenlabs-agent:3004}
       - ELEVENLABS_AGENT_ID=${ELEVENLABS_AGENT_ID:-}
       - ELEVENLABS_API_KEY=${ELEVENLABS_API_KEY:-}
