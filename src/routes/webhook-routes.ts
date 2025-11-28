@@ -7,6 +7,9 @@ import type { AgentToolRequest, CallbackPayload } from '../types/webhook.js';
 import { SessionService } from '../services/session-service.js';
 import { CursorRunnerService } from '../services/cursor-runner-service.js';
 import { AgentConversationService } from '../services/agent-conversation-service.js';
+import { ElevenLabsApiClient } from '../services/elevenlabs-api.js';
+import { ElevenLabsPushService } from '../services/elevenlabs-push-service.js';
+import { CallbackQueueService } from '../services/callback-queue.js';
 import { requireElevenLabsEnabled } from '../utils/feature-flags.js';
 import type Redis from 'ioredis';
 
@@ -17,29 +20,18 @@ export function setupWebhookRoutes(router: Router, redis?: Redis): void {
   const sessionService = redis ? new SessionService(redis) : null;
   const cursorRunnerService = new CursorRunnerService();
   const agentConversationService = new AgentConversationService();
+  const elevenlabsApi = new ElevenLabsApiClient();
+  const pushService = new ElevenLabsPushService();
+  const callbackQueue = redis ? new CallbackQueueService(redis) : null;
+  
   /**
    * GET /signed-url
-   * Generate a signed URL for ElevenLabs agent webhook registration
-   * Query params: agent_id (optional)
+   * Get a signed URL from ElevenLabs API for connecting to an agent
+   * Query params: agentId (optional)
    */
   router.get('/signed-url', requireElevenLabsEnabled, async (req: Request, res: Response) => {
     try {
-      const agentId = req.query.agent_id as string | undefined;
-      const webhookSecret = process.env.WEBHOOK_SECRET;
-      const cursorRunnerUrl = process.env.CURSOR_RUNNER_URL || 'http://cursor-runner:3001';
-
-      if (!webhookSecret) {
-        logger.warn('WEBHOOK_SECRET not configured');
-        res.status(500).json({
-          success: false,
-          error: 'Webhook secret not configured',
-        });
-        return;
-      }
-
-      // Build webhook URL
-      const baseUrl = process.env.ELEVENLABS_AGENT_URL || 'http://elevenlabs-agent:3004';
-      const webhookUrl = `${baseUrl}/agent-tools`;
+      const agentId = req.query.agentId as string | undefined;
 
       logger.info('Signed URL requested', {
         agentId,
@@ -47,22 +39,35 @@ export function setupWebhookRoutes(router: Router, redis?: Redis): void {
         userAgent: req.get('user-agent'),
       });
 
-      // For now, return the webhook URL
-      // In a full implementation, this would generate a signed URL with expiration
+      if (!elevenlabsApi.isConfigured()) {
+        res.status(500).json({
+          success: false,
+          error: 'ELEVENLABS_API_KEY not configured',
+        });
+        return;
+      }
+
+      const result = await elevenlabsApi.getSignedUrl(agentId);
+
       res.json({
-        url: webhookUrl,
-        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(), // 24 hours
+        signedUrl: result.signedUrl,
+        expiresAt: result.expiresAt,
       });
     } catch (error) {
-      const err = error as Error;
-      logger.error('Failed to generate signed URL', {
+      const err = error as Error & { status?: number; code?: string };
+      logger.error('Failed to get signed URL from ElevenLabs', {
         error: err.message,
+        status: err.status,
+        code: err.code,
         stack: err.stack,
       });
 
-      res.status(500).json({
+      // Use appropriate status code if available
+      const statusCode = err.status && err.status >= 400 && err.status < 600 ? err.status : 500;
+
+      res.status(statusCode).json({
         success: false,
-        error: err.message,
+        error: err.message || 'Failed to get signed URL from ElevenLabs',
         timestamp: new Date().toISOString(),
       });
     }
@@ -207,6 +212,35 @@ export function setupWebhookRoutes(router: Router, redis?: Redis): void {
           callbackUrl
         );
 
+        // Create callback task to track this async operation
+        // Extract wsUrl from session metadata if available
+        const wsUrl = session?.metadata?.wsUrl as string | undefined;
+        const sessionPayload = session?.metadata?.sessionPayload as unknown;
+
+        if (callbackQueue && wsUrl && result.requestId) {
+          try {
+            await callbackQueue.createTask({
+              taskId: result.requestId,
+              conversationId: conversationId || '',
+              sessionPayload: sessionPayload || {},
+              wsUrl: wsUrl,
+              toolName: body.tool_name,
+              toolArgs: body.tool_args,
+              requestId: result.requestId,
+            });
+            logger.info('Callback task created', {
+              requestId: result.requestId,
+              conversationId,
+            });
+          } catch (error) {
+            logger.warn('Failed to create callback task', {
+              error: (error as Error).message,
+              requestId: result.requestId,
+            });
+            // Continue even if callback task creation fails
+          }
+        }
+
         res.json({
           success: true,
           message: 'Tool request processed',
@@ -271,10 +305,71 @@ export function setupWebhookRoutes(router: Router, redis?: Redis): void {
         return;
       }
 
-      // Find session by conversationId
+      // Find callback task by requestId (which is the taskId)
+      let callbackTask = null;
+      if (callbackQueue && body.requestId) {
+        try {
+          callbackTask = await callbackQueue.getTask(body.requestId);
+        } catch (error) {
+          logger.warn('Failed to get callback task', {
+            error: (error as Error).message,
+            requestId: body.requestId,
+          });
+        }
+      }
+
+      // Find session by conversationId (fallback if callback task not found)
       let session = null;
       if (body.conversationId && sessionService) {
         session = await sessionService.findSessionByConversationId(body.conversationId);
+      }
+
+      // Get wsUrl from callback task or session
+      const wsUrl = callbackTask?.wsUrl || (session?.metadata?.wsUrl as string | undefined);
+
+      // Push message to ElevenLabs if wsUrl is available
+      if (wsUrl) {
+        try {
+          const message = pushService.constructCompletionMessage(
+            body.success,
+            body.output,
+            body.error
+          );
+          await pushService.pushMessage(wsUrl, message);
+          logger.info('Message pushed to ElevenLabs', {
+            requestId: body.requestId,
+            success: body.success,
+          });
+        } catch (error) {
+          // Log error but don't crash - callback processing should continue
+          logger.error('Failed to push message to ElevenLabs', {
+            error: (error as Error).message,
+            requestId: body.requestId,
+            wsUrl: wsUrl.substring(0, 50) + '...',
+          });
+        }
+      } else {
+        logger.warn('No wsUrl available for pushing message', {
+          requestId: body.requestId,
+          hasCallbackTask: !!callbackTask,
+          hasSession: !!session,
+        });
+      }
+
+      // Update callback task as completed
+      if (callbackQueue && callbackTask && body.requestId) {
+        try {
+          await callbackQueue.markCompleted(
+            body.requestId,
+            body.success ? { output: body.output } : undefined,
+            body.success ? undefined : body.error
+          );
+        } catch (error) {
+          logger.warn('Failed to mark callback task as completed', {
+            error: (error as Error).message,
+            requestId: body.requestId,
+          });
+        }
       }
 
       if (session && sessionService) {
@@ -312,14 +407,13 @@ export function setupWebhookRoutes(router: Router, redis?: Redis): void {
         }
       }
 
-      // TODO: Notify ElevenLabs agent via webhook/API if needed
-      // For now, log the callback
       logger.info('Callback processed', {
         requestId: body.requestId,
         conversationId: body.conversationId,
         success: body.success,
         sessionId: session?.sessionId,
         agentConversationId: session?.agentConversationId,
+        messagePushed: !!wsUrl,
       });
 
       res.json({

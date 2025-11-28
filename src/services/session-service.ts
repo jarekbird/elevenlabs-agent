@@ -11,7 +11,7 @@ export interface AgentSession {
   agentConversationId?: string; // ID of the agent conversation in cursor-runner
   createdAt: string;
   lastAccessedAt: string;
-  metadata?: Record<string, unknown>;
+  metadata?: Record<string, unknown>; // Can include wsUrl and sessionPayload for pushing messages
 }
 
 export class SessionService {

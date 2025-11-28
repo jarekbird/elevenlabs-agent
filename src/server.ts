@@ -7,6 +7,7 @@ import Redis from 'ioredis';
 import { logger } from './logger.js';
 import { setupWebhookRoutes } from './routes/webhook-routes.js';
 import { setupConfigRoutes } from './routes/config-routes.js';
+import { setupAgentConversationRoutes } from './routes/agent-conversation-routes.js';
 
 /**
  * HTTP Server for elevenlabs-agent API
@@ -62,6 +63,27 @@ export class Server {
    * Setup Express middleware
    */
   private setupMiddleware(): void {
+    // CORS middleware for browser requests
+    this.app.use((req: Request, res: Response, next) => {
+      const origin = req.headers.origin;
+      // Allow requests from the UI (localhost in dev, or configured domain in prod)
+      if (origin) {
+        res.setHeader('Access-Control-Allow-Origin', origin);
+      } else {
+        res.setHeader('Access-Control-Allow-Origin', '*');
+      }
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-webhook-secret');
+      res.setHeader('Access-Control-Allow-Credentials', 'true');
+      
+      // Handle preflight requests
+      if (req.method === 'OPTIONS') {
+        res.sendStatus(200);
+        return;
+      }
+      next();
+    });
+
     // JSON body parsing
     this.app.use(express.json());
 
@@ -123,6 +145,9 @@ export class Server {
     
     // Setup config routes
     setupConfigRoutes(router);
+    
+    // Setup agent conversation routes (session registration, etc.)
+    setupAgentConversationRoutes(router, this.redis);
     
     this.app.use('/', router);
   }

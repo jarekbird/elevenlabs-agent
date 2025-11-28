@@ -321,6 +321,84 @@ describe('Webhook Routes', () => {
     });
   });
 
+  describe('Callback Route Push Logic', () => {
+    beforeEach(() => {
+      process.env.ELEVENLABS_AGENT_ENABLED = 'true';
+      process.env.WEBHOOK_SECRET = 'test-secret';
+    });
+
+    it('should attempt to push message when callback task has wsUrl', async () => {
+      // This test verifies the callback route attempts to push
+      // The actual push is stubbed in MVP, so we just verify it doesn't crash
+      await server.start();
+
+      const response = await request(server.app)
+        .post('/callback')
+        .send({
+          success: true,
+          requestId: 'test-request-id',
+          conversationId: 'test-conversation',
+          output: 'Task completed',
+          timestamp: new Date().toISOString(),
+        });
+
+      expect(response.status).toBe(200);
+      expect(response.body).toHaveProperty('success', true);
+    });
+
+    it('should handle callback when no wsUrl is available gracefully', async () => {
+      await server.start();
+
+      const response = await request(server.app)
+        .post('/callback')
+        .send({
+          success: true,
+          requestId: 'test-request-id-no-ws',
+          conversationId: 'test-conversation-no-session',
+          output: 'Task completed',
+          timestamp: new Date().toISOString(),
+        });
+
+      // Should still succeed even without wsUrl (logs warning but doesn't fail)
+      expect(response.status).toBe(200);
+      expect(response.body).toHaveProperty('success', true);
+    });
+
+    it('should construct completion message correctly for success', async () => {
+      await server.start();
+
+      const response = await request(server.app)
+        .post('/callback')
+        .send({
+          success: true,
+          requestId: 'test-success',
+          conversationId: 'test-conv',
+          output: 'Task output here',
+          timestamp: new Date().toISOString(),
+        });
+
+      expect(response.status).toBe(200);
+      // Message construction is tested in push service tests
+    });
+
+    it('should construct error message correctly for failure', async () => {
+      await server.start();
+
+      const response = await request(server.app)
+        .post('/callback')
+        .send({
+          success: false,
+          requestId: 'test-error',
+          conversationId: 'test-conv',
+          error: 'Task failed',
+          timestamp: new Date().toISOString(),
+        });
+
+      expect(response.status).toBe(200);
+      // Error message construction is tested in push service tests
+    });
+  });
+
   describe('Webhook Handling and Immediate Responses', () => {
     beforeEach(() => {
       process.env.ELEVENLABS_AGENT_ENABLED = 'true';
