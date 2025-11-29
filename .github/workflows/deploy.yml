@@ -1,0 +1,83 @@
+name: Deploy elevenlabs-agent
+
+on:
+  push:
+    branches:
+      - master
+      - main
+  workflow_dispatch:  # Allows manual trigger from GitHub UI
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    # Only run if the push is to the main branch
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    
+    steps:
+      - name: Deploy to server
+        uses: appleboy/ssh-action@v1.0.3
+        env:
+          DOMAIN_NAME: ${{ secrets.DOMAIN_NAME }}
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT || 22 }}
+          script: |
+            set -e
+            
+            # Initialize Docker resources (network and volumes) if they don't exist
+            echo "Initializing Docker resources..."
+            
+            # Create network if it doesn't exist
+            if ! docker network ls | grep -q "virtual-assistant-network"; then
+              echo "Creating virtual-assistant-network..."
+              docker network create virtual-assistant-network || true
+            fi
+            
+            # Create shared Redis data volume if it doesn't exist
+            if ! docker volume inspect shared_redis_data >/dev/null 2>&1; then
+              echo "Creating shared_redis_data volume..."
+              docker volume create shared_redis_data || true
+            fi
+            
+            # Navigate to elevenlabs-agent directory
+            cd elevenlabs-agent || { echo "Directory elevenlabs-agent not found"; exit 1; }
+            
+            # Update code
+            git fetch origin || { echo "Git fetch failed"; exit 1; }
+            BRANCH=$(git symbolic-ref --short HEAD 2>/dev/null || echo "main")
+            git reset --hard origin/$BRANCH || { echo "Git reset failed"; exit 1; }
+            
+            # Build the container first
+            docker compose build elevenlabs-agent || { echo "Docker build failed"; exit 1; }
+            
+            # Deploy the container
+            # Force recreate to ensure Traefik picks up new labels
+            # DOMAIN_NAME is optional - used for Traefik routing labels
+            # Should be just the domain name (e.g., "jarekva.com") without protocol
+            # Can be set via GitHub secret DOMAIN_NAME or environment variable
+            export DOMAIN_NAME=${DOMAIN_NAME:-jarekva.com}
+            echo "Using DOMAIN_NAME: $DOMAIN_NAME"
+            
+            # Force recreate container with DOMAIN_NAME from environment
+            docker compose up -d --force-recreate elevenlabs-agent || { echo "Docker up failed"; exit 1; }
+            
+            # Wait a few seconds for the service to start
+            echo "Waiting for service to start..."
+            sleep 10
+            
+            # Verify the service is running
+            echo "Verifying service health..."
+            if docker compose ps elevenlabs-agent | grep -q "Up"; then
+              echo "✓ Service is running"
+            else
+              echo "✗ Service failed to start"
+              docker compose logs --tail=50 elevenlabs-agent
+              exit 1
+            fi
+            
+            echo "Deployment completed successfully"
+          script_stop: true
+          debug: true
+
