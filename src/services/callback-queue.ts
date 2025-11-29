@@ -4,8 +4,8 @@
  * Stores tasks in Redis with key pattern: cursor_task:{taskId}
  */
 
-import Redis from 'ioredis';
-import { logger } from '../logger.js';
+import Redis from "ioredis";
+import { logger } from "../logger.js";
 
 export interface CallbackTask {
   conversationId: string;
@@ -25,13 +25,13 @@ export interface CallbackTask {
 export class CallbackQueueService {
   private redis: Redis;
   private readonly TTL = 86400; // 24 hours in seconds
-  private readonly KEY_PREFIX = 'cursor_task:';
+  private readonly KEY_PREFIX = "cursor_task:";
 
   constructor(redisClient?: Redis) {
     if (redisClient) {
       this.redis = redisClient;
     } else {
-      const redisUrl = process.env.REDIS_URL || 'redis://redis:6379/0';
+      const redisUrl = process.env.REDIS_URL || "redis://redis:6379/0";
       this.redis = new Redis(redisUrl, {
         retryStrategy: (times) => {
           if (times > 3) {
@@ -44,18 +44,18 @@ export class CallbackQueueService {
         enableOfflineQueue: false,
       });
 
-      this.redis.on('error', (error) => {
-        logger.error('Redis connection error in CallbackQueueService', {
+      this.redis.on("error", (error) => {
+        logger.error("Redis connection error in CallbackQueueService", {
           error: error.message,
         });
       });
 
-      this.redis.on('connect', () => {
-        logger.info('Redis connected for callback queue');
+      this.redis.on("connect", () => {
+        logger.info("Redis connected for callback queue");
       });
 
       this.redis.connect().catch((error) => {
-        logger.warn('Redis connection failed for callback queue', {
+        logger.warn("Redis connection failed for callback queue", {
           error: error.message,
         });
       });
@@ -65,7 +65,9 @@ export class CallbackQueueService {
   /**
    * Create a new callback task
    */
-  async createTask(task: Omit<CallbackTask, 'createdAt' | 'pending'>): Promise<void> {
+  async createTask(
+    task: Omit<CallbackTask, "createdAt" | "pending">,
+  ): Promise<void> {
     const key = `${this.KEY_PREFIX}${task.taskId}`;
     const callbackTask: CallbackTask = {
       ...task,
@@ -74,14 +76,13 @@ export class CallbackQueueService {
     };
 
     try {
-      await this.redis.setex(
-        key,
-        this.TTL,
-        JSON.stringify(callbackTask)
-      );
-      logger.info('Callback task created', { taskId: task.taskId, conversationId: task.conversationId });
+      await this.redis.setex(key, this.TTL, JSON.stringify(callbackTask));
+      logger.info("Callback task created", {
+        taskId: task.taskId,
+        conversationId: task.conversationId,
+      });
     } catch (error) {
-      logger.error('Failed to create callback task', {
+      logger.error("Failed to create callback task", {
         taskId: task.taskId,
         error: error instanceof Error ? error.message : String(error),
       });
@@ -94,7 +95,7 @@ export class CallbackQueueService {
    */
   async getTask(taskId: string): Promise<CallbackTask | null> {
     const key = `${this.KEY_PREFIX}${taskId}`;
-    
+
     try {
       const data = await this.redis.get(key);
       if (!data) {
@@ -102,7 +103,7 @@ export class CallbackQueueService {
       }
       return JSON.parse(data) as CallbackTask;
     } catch (error) {
-      logger.error('Failed to get callback task', {
+      logger.error("Failed to get callback task", {
         taskId,
         error: error instanceof Error ? error.message : String(error),
       });
@@ -116,14 +117,18 @@ export class CallbackQueueService {
    */
   async updateTask(
     taskId: string,
-    updates: Partial<Pick<CallbackTask, 'pending' | 'completedAt' | 'result' | 'error'>>
+    updates: Partial<
+      Pick<CallbackTask, "pending" | "completedAt" | "result" | "error">
+    >,
   ): Promise<void> {
     const key = `${this.KEY_PREFIX}${taskId}`;
-    
+
     try {
       const existing = await this.getTask(taskId);
       if (!existing) {
-        logger.warn('Attempted to update non-existent callback task', { taskId });
+        logger.warn("Attempted to update non-existent callback task", {
+          taskId,
+        });
         return;
       }
 
@@ -136,15 +141,11 @@ export class CallbackQueueService {
       const ttl = await this.redis.ttl(key);
       const expiration = ttl > 0 ? ttl : this.TTL;
 
-      await this.redis.setex(
-        key,
-        expiration,
-        JSON.stringify(updated)
-      );
-      
-      logger.info('Callback task updated', { taskId, updates });
+      await this.redis.setex(key, expiration, JSON.stringify(updated));
+
+      logger.info("Callback task updated", { taskId, updates });
     } catch (error) {
-      logger.error('Failed to update callback task', {
+      logger.error("Failed to update callback task", {
         taskId,
         error: error instanceof Error ? error.message : String(error),
       });
@@ -155,7 +156,11 @@ export class CallbackQueueService {
   /**
    * Mark a task as completed
    */
-  async markCompleted(taskId: string, result?: unknown, error?: string): Promise<void> {
+  async markCompleted(
+    taskId: string,
+    result?: unknown,
+    error?: string,
+  ): Promise<void> {
     await this.updateTask(taskId, {
       pending: false,
       completedAt: new Date().toISOString(),
@@ -170,13 +175,11 @@ export class CallbackQueueService {
   async shutdown(): Promise<void> {
     try {
       await this.redis.quit();
-      logger.info('CallbackQueueService Redis connection closed');
+      logger.info("CallbackQueueService Redis connection closed");
     } catch (error) {
-      logger.error('Error closing CallbackQueueService Redis connection', {
+      logger.error("Error closing CallbackQueueService Redis connection", {
         error: error instanceof Error ? error.message : String(error),
       });
     }
   }
 }
-
-

@@ -1,8 +1,8 @@
 /**
  * Service for managing agent sessions in Redis
  */
-import Redis from 'ioredis';
-import { logger } from '../logger.js';
+import Redis from "ioredis";
+import { logger } from "../logger.js";
 
 export interface AgentSession {
   sessionId: string;
@@ -16,20 +16,22 @@ export interface AgentSession {
 
 export class SessionService {
   private redis: Redis;
-  private readonly SESSION_PREFIX = 'elevenlabs:session:';
+  private readonly SESSION_PREFIX = "elevenlabs:session:";
   private readonly SESSION_TTL = 3600; // 1 hour in seconds
   private redisAvailable: boolean = false;
 
   constructor(redis: Redis) {
     this.redis = redis;
 
-    this.redis.on('error', (error) => {
-      logger.error('Redis connection error in SessionService', { error: error.message });
+    this.redis.on("error", (error) => {
+      logger.error("Redis connection error in SessionService", {
+        error: error.message,
+      });
       this.redisAvailable = false;
     });
 
-    this.redis.on('connect', () => {
-      logger.info('Redis connected for session storage');
+    this.redis.on("connect", () => {
+      logger.info("Redis connected for session storage");
       this.redisAvailable = true;
     });
   }
@@ -39,7 +41,7 @@ export class SessionService {
    */
   async createOrUpdateSession(session: AgentSession): Promise<void> {
     if (!this.redisAvailable) {
-      logger.warn('Redis not available, skipping session storage');
+      logger.warn("Redis not available, skipping session storage");
       return;
     }
 
@@ -51,9 +53,9 @@ export class SessionService {
       });
 
       await this.redis.setex(key, this.SESSION_TTL, value);
-      logger.debug('Session created/updated', { sessionId: session.sessionId });
+      logger.debug("Session created/updated", { sessionId: session.sessionId });
     } catch (error) {
-      logger.error('Failed to create/update session', {
+      logger.error("Failed to create/update session", {
         sessionId: session.sessionId,
         error: error instanceof Error ? error.message : String(error),
       });
@@ -79,7 +81,7 @@ export class SessionService {
 
       return JSON.parse(value) as AgentSession;
     } catch (error) {
-      logger.error('Failed to get session', {
+      logger.error("Failed to get session", {
         sessionId,
         error: error instanceof Error ? error.message : String(error),
       });
@@ -98,9 +100,9 @@ export class SessionService {
     try {
       const key = `${this.SESSION_PREFIX}${sessionId}`;
       await this.redis.del(key);
-      logger.debug('Session deleted', { sessionId });
+      logger.debug("Session deleted", { sessionId });
     } catch (error) {
-      logger.error('Failed to delete session', {
+      logger.error("Failed to delete session", {
         sessionId,
         error: error instanceof Error ? error.message : String(error),
       });
@@ -112,7 +114,7 @@ export class SessionService {
    */
   async updateSessionConversation(
     sessionId: string,
-    conversationId: string
+    conversationId: string,
   ): Promise<void> {
     const session = await this.getSession(sessionId);
     if (session) {
@@ -124,7 +126,9 @@ export class SessionService {
   /**
    * Find session by conversation ID
    */
-  async findSessionByConversationId(conversationId: string): Promise<AgentSession | null> {
+  async findSessionByConversationId(
+    conversationId: string,
+  ): Promise<AgentSession | null> {
     if (!this.redisAvailable) {
       return null;
     }
@@ -145,7 +149,7 @@ export class SessionService {
 
       return null;
     } catch (error) {
-      logger.error('Failed to find session by conversation ID', {
+      logger.error("Failed to find session by conversation ID", {
         conversationId,
         error: error instanceof Error ? error.message : String(error),
       });
@@ -178,7 +182,7 @@ export class SessionService {
 
       return sessions;
     } catch (error) {
-      logger.error('Failed to list agent sessions', {
+      logger.error("Failed to list agent sessions", {
         agentId,
         error: error instanceof Error ? error.message : String(error),
       });
@@ -186,4 +190,3 @@ export class SessionService {
     }
   }
 }
-

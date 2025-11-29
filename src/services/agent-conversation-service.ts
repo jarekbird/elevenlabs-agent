@@ -1,12 +1,12 @@
 /**
  * Service for managing agent conversations via cursor-runner API
  */
-import { logger } from '../logger.js';
+import { logger } from "../logger.js";
 
 export interface AgentMessage {
-  role: 'user' | 'assistant';
+  role: "user" | "assistant";
   content: string;
-  source?: 'voice' | 'text' | 'tool_output';
+  source?: "voice" | "text" | "tool_output";
   timestamp?: string;
 }
 
@@ -24,7 +24,7 @@ export class AgentConversationService {
 
   constructor() {
     this.CURSOR_RUNNER_URL =
-      process.env.CURSOR_RUNNER_URL || 'http://cursor-runner:3001';
+      process.env.CURSOR_RUNNER_URL || "http://cursor-runner:3001";
   }
 
   /**
@@ -34,13 +34,13 @@ export class AgentConversationService {
     const url = `${this.CURSOR_RUNNER_URL}/agent-conversations/api/new`;
     const body = agentId ? { agentId } : {};
 
-    logger.info('Creating agent conversation', { agentId, url });
+    logger.info("Creating agent conversation", { agentId, url });
 
     try {
       const response = await fetch(url, {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
         body: JSON.stringify(body),
       });
@@ -52,7 +52,7 @@ export class AgentConversationService {
         throw new Error(
           `Failed to create agent conversation: ${response.status} - ${
             errorData.error || response.statusText
-          }`
+          }`,
         );
       }
 
@@ -64,7 +64,7 @@ export class AgentConversationService {
       // Fetch the created conversation to return full details
       return this.getConversation(data.conversationId);
     } catch (error) {
-      logger.error('Error creating agent conversation', {
+      logger.error("Error creating agent conversation", {
         error: (error as Error).message,
         agentId,
       });
@@ -91,13 +91,13 @@ export class AgentConversationService {
         throw new Error(
           `Failed to get agent conversation: ${response.status} - ${
             errorData.error || response.statusText
-          }`
+          }`,
         );
       }
 
       return (await response.json()) as AgentConversation;
     } catch (error) {
-      logger.error('Error getting agent conversation', {
+      logger.error("Error getting agent conversation", {
         error: (error as Error).message,
         conversationId,
       });
@@ -110,11 +110,11 @@ export class AgentConversationService {
    */
   async addMessage(
     conversationId: string,
-    message: AgentMessage
+    message: AgentMessage,
   ): Promise<void> {
     const url = `${this.CURSOR_RUNNER_URL}/agent-conversations/api/${conversationId}/message`;
 
-    logger.info('Adding message to agent conversation', {
+    logger.info("Adding message to agent conversation", {
       conversationId,
       role: message.role,
       contentLength: message.content.length,
@@ -122,9 +122,9 @@ export class AgentConversationService {
 
     try {
       const response = await fetch(url, {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
         body: JSON.stringify(message),
       });
@@ -136,11 +136,11 @@ export class AgentConversationService {
         throw new Error(
           `Failed to add message to agent conversation: ${response.status} - ${
             errorData.error || response.statusText
-          }`
+          }`,
         );
       }
     } catch (error) {
-      logger.error('Error adding message to agent conversation', {
+      logger.error("Error adding message to agent conversation", {
         error: (error as Error).message,
         conversationId,
       });
@@ -148,4 +148,3 @@ export class AgentConversationService {
     }
   }
 }
-

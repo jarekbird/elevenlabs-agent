@@ -3,10 +3,10 @@
  * Implements Task 34: MVP Cursor Completion → Agent Push Flow
  */
 
-import { logger } from '../logger.js';
+import { logger } from "../logger.js";
 
 export interface PushMessage {
-  type: 'input_text';
+  type: "input_text";
   text: string;
   metadata?: Record<string, unknown>;
 }
@@ -24,12 +24,12 @@ export class ElevenLabsPushService {
    */
   async pushMessage(wsUrl: string, message: PushMessage): Promise<void> {
     if (!wsUrl) {
-      throw new Error('WebSocket URL is required');
+      throw new Error("WebSocket URL is required");
     }
 
     try {
-      logger.info('Pushing message to ElevenLabs', {
-        wsUrl: wsUrl.substring(0, 50) + '...', // Log partial URL for security
+      logger.info("Pushing message to ElevenLabs", {
+        wsUrl: wsUrl.substring(0, 50) + "...", // Log partial URL for security
         messageType: message.type,
         textLength: message.text.length,
       });
@@ -37,19 +37,21 @@ export class ElevenLabsPushService {
       // For MVP, we'll use a simple HTTP POST to the ElevenLabs API
       // The actual WebSocket connection is managed by the frontend
       // We need to use the ElevenLabs REST API to push messages
-      
+
       // Extract the base URL from wsUrl (convert wss:// to https://)
-      const baseUrl = wsUrl.replace('wss://', 'https://').replace('/ws/', '/api/');
-      
+      const baseUrl = wsUrl
+        .replace("wss://", "https://")
+        .replace("/ws/", "/api/");
+
       // For ElevenLabs conversational AI, we need to use the REST API endpoint
       // The endpoint format is typically: POST /v1/convai/conversations/{sessionId}/input_text
       // But we need to extract sessionId from wsUrl or use a different approach
-      
+
       // Alternative: Use the ElevenLabs API client to push messages
       // For now, we'll log the message and return success
       // TODO: Implement actual WebSocket push or REST API call
-      
-      logger.info('Message push simulated (MVP)', {
+
+      logger.info("Message push simulated (MVP)", {
         message: message.text.substring(0, 100),
       });
 
@@ -57,15 +59,15 @@ export class ElevenLabsPushService {
       // 1. Parse wsUrl to extract sessionId and auth tokens
       // 2. Use ElevenLabs REST API or WebSocket client to push the message
       // 3. Handle errors and retries
-      
+
       // For MVP, we'll return success after logging
       return Promise.resolve();
     } catch (error) {
       const err = error instanceof Error ? error : new Error(String(error));
-      logger.error('Failed to push message to ElevenLabs', {
+      logger.error("Failed to push message to ElevenLabs", {
         error: err.message,
         stack: err.stack,
-        wsUrl: wsUrl.substring(0, 50) + '...',
+        wsUrl: wsUrl.substring(0, 50) + "...",
       });
       throw new Error(`Failed to push message to ElevenLabs: ${err.message}`);
     }
@@ -81,22 +83,20 @@ export class ElevenLabsPushService {
   constructCompletionMessage(
     success: boolean,
     output?: string,
-    error?: string
+    error?: string,
   ): PushMessage {
     if (success) {
-      const summary = output || 'Task completed successfully';
+      const summary = output || "Task completed successfully";
       return {
-        type: 'input_text',
+        type: "input_text",
         text: `Your code task is complete.\n\nSummary:\n${summary}`,
       };
     } else {
-      const errorMsg = error || 'Task failed with unknown error';
+      const errorMsg = error || "Task failed with unknown error";
       return {
-        type: 'input_text',
+        type: "input_text",
         text: `Your code task encountered an error.\n\nError:\n${errorMsg}`,
       };
     }
   }
 }
-
-

@@ -1,13 +1,18 @@
 /**
  * Express server for elevenlabs-agent service
  */
-import express, { type Request, type Response, type Application, type Router } from 'express';
-import type { Server as HttpServer } from 'http';
-import Redis from 'ioredis';
-import { logger } from './logger.js';
-import { setupWebhookRoutes } from './routes/webhook-routes.js';
-import { setupConfigRoutes } from './routes/config-routes.js';
-import { setupAgentConversationRoutes } from './routes/agent-conversation-routes.js';
+import express, {
+  type Request,
+  type Response,
+  type Application,
+  type Router,
+} from "express";
+import type { Server as HttpServer } from "http";
+import Redis from "ioredis";
+import { logger } from "./logger.js";
+import { setupWebhookRoutes } from "./routes/webhook-routes.js";
+import { setupConfigRoutes } from "./routes/config-routes.js";
+import { setupAgentConversationRoutes } from "./routes/agent-conversation-routes.js";
 
 /**
  * HTTP Server for elevenlabs-agent API
@@ -20,7 +25,7 @@ export class Server {
 
   constructor() {
     this.app = express();
-    this.port = parseInt(process.env.PORT || '3004', 10);
+    this.port = parseInt(process.env.PORT || "3004", 10);
     this.initializeRedis();
     this.setupMiddleware();
     this.setupRoutes();
@@ -30,7 +35,7 @@ export class Server {
    * Initialize Redis connection
    */
   private initializeRedis(): void {
-    const redisUrl = process.env.REDIS_URL || 'redis://redis:6379/0';
+    const redisUrl = process.env.REDIS_URL || "redis://redis:6379/0";
     this.redis = new Redis(redisUrl, {
       retryStrategy: (times) => {
         if (times > 3) {
@@ -43,17 +48,17 @@ export class Server {
       enableOfflineQueue: false,
     });
 
-    this.redis.on('error', (error) => {
-      logger.error('Redis connection error', { error: error.message });
+    this.redis.on("error", (error) => {
+      logger.error("Redis connection error", { error: error.message });
     });
 
-    this.redis.on('connect', () => {
-      logger.info('Redis connected');
+    this.redis.on("connect", () => {
+      logger.info("Redis connected");
     });
 
     // Try to connect, but don't fail if it doesn't work
     this.redis.connect().catch((error) => {
-      logger.warn('Redis connection failed', {
+      logger.warn("Redis connection failed", {
         error: error instanceof Error ? error.message : String(error),
       });
     });
@@ -68,16 +73,22 @@ export class Server {
       const origin = req.headers.origin;
       // Allow requests from the UI (localhost in dev, or configured domain in prod)
       if (origin) {
-        res.setHeader('Access-Control-Allow-Origin', origin);
+        res.setHeader("Access-Control-Allow-Origin", origin);
       } else {
-        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader("Access-Control-Allow-Origin", "*");
       }
-      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-webhook-secret');
-      res.setHeader('Access-Control-Allow-Credentials', 'true');
-      
+      res.setHeader(
+        "Access-Control-Allow-Methods",
+        "GET, POST, PUT, DELETE, OPTIONS",
+      );
+      res.setHeader(
+        "Access-Control-Allow-Headers",
+        "Content-Type, Authorization, x-webhook-secret",
+      );
+      res.setHeader("Access-Control-Allow-Credentials", "true");
+
       // Handle preflight requests
-      if (req.method === 'OPTIONS') {
+      if (req.method === "OPTIONS") {
         res.sendStatus(200);
         return;
       }
@@ -89,11 +100,11 @@ export class Server {
 
     // Request logging
     this.app.use((req: Request, res: Response, next) => {
-      logger.info('HTTP Request', {
+      logger.info("HTTP Request", {
         method: req.method,
         path: req.path,
         ip: req.ip,
-        userAgent: req.get('user-agent'),
+        userAgent: req.get("user-agent"),
       });
       next();
     });
@@ -106,50 +117,50 @@ export class Server {
     const router: Router = express.Router();
 
     // Health check endpoint with Redis connectivity status
-    this.app.get('/health', async (req: Request, res: Response) => {
-      logger.info('Health check requested', {
+    this.app.get("/health", async (req: Request, res: Response) => {
+      logger.info("Health check requested", {
         ip: req.ip,
-        userAgent: req.get('user-agent'),
-        service: 'elevenlabs-agent',
+        userAgent: req.get("user-agent"),
+        service: "elevenlabs-agent",
       });
 
       // Check Redis connectivity
-      let redisStatus = 'unknown';
+      let redisStatus = "unknown";
       if (this.redis) {
         try {
           const status = this.redis.status;
-          if (status === 'ready' || status === 'connect') {
+          if (status === "ready" || status === "connect") {
             // Try to ping to verify connection is actually working
             const pingResult = await this.redis.ping();
-            redisStatus = pingResult === 'PONG' ? 'connected' : 'disconnected';
+            redisStatus = pingResult === "PONG" ? "connected" : "disconnected";
           } else {
-            redisStatus = 'disconnected';
+            redisStatus = "disconnected";
           }
         } catch (error) {
-          redisStatus = 'error';
-          logger.warn('Redis health check failed', {
+          redisStatus = "error";
+          logger.warn("Redis health check failed", {
             error: error instanceof Error ? error.message : String(error),
           });
         }
       }
 
       res.json({
-        status: 'ok',
-        service: 'elevenlabs-agent',
+        status: "ok",
+        service: "elevenlabs-agent",
         redis: redisStatus,
       });
     });
 
     // Setup webhook routes
     setupWebhookRoutes(router, this.redis);
-    
+
     // Setup config routes
     setupConfigRoutes(router);
-    
+
     // Setup agent conversation routes (session registration, etc.)
     setupAgentConversationRoutes(router, this.redis);
-    
-    this.app.use('/', router);
+
+    this.app.use("/", router);
   }
 
   /**
@@ -158,9 +169,9 @@ export class Server {
   async start(): Promise<void> {
     return new Promise<void>((resolve) => {
       this.server = this.app.listen(this.port, () => {
-        logger.info('HTTP Server started', {
+        logger.info("HTTP Server started", {
           port: this.port,
-          environment: process.env.NODE_ENV || 'development',
+          environment: process.env.NODE_ENV || "development",
         });
         resolve();
       });
@@ -179,10 +190,10 @@ export class Server {
         shutdownPromises.push(
           new Promise<void>((serverResolve) => {
             this.server!.close(() => {
-              logger.info('HTTP Server stopped');
+              logger.info("HTTP Server stopped");
               serverResolve();
             });
-          })
+          }),
         );
       }
 
@@ -190,25 +201,26 @@ export class Server {
       if (this.redis) {
         shutdownPromises.push(
           new Promise<void>((redisResolve) => {
-            this.redis!.quit().then(() => {
-              logger.info('Redis connection closed');
-              redisResolve();
-            }).catch((error) => {
-              logger.warn('Error closing Redis connection', {
-                error: error instanceof Error ? error.message : String(error),
+            this.redis!.quit()
+              .then(() => {
+                logger.info("Redis connection closed");
+                redisResolve();
+              })
+              .catch((error) => {
+                logger.warn("Error closing Redis connection", {
+                  error: error instanceof Error ? error.message : String(error),
+                });
+                redisResolve();
               });
-              redisResolve();
-            });
-          })
+          }),
         );
       }
 
       // Wait for all shutdown operations to complete
       Promise.all(shutdownPromises).then(() => {
-        logger.info('Server shutdown complete');
+        logger.info("Server shutdown complete");
         resolve();
       });
     });
   }
 }
-

@@ -32,5 +32,3 @@ export interface SignedUrlResponse {
   url: string;
   expiresAt: string;
 }
-
-

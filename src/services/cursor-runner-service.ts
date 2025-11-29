@@ -1,14 +1,14 @@
 /**
  * Service for communicating with cursor-runner
  */
-import { logger } from '../logger.js';
+import { logger } from "../logger.js";
 
 export interface CursorRunnerRequest {
   repository?: string;
   branchName?: string;
   prompt: string;
   conversationId?: string;
-  queueType?: 'default' | 'telegram' | 'api';
+  queueType?: "default" | "telegram" | "api";
 }
 
 export interface CursorRunnerResponse {
@@ -23,7 +23,8 @@ export class CursorRunnerService {
   private cursorRunnerUrl: string;
 
   constructor() {
-    this.cursorRunnerUrl = process.env.CURSOR_RUNNER_URL || 'http://cursor-runner:3001';
+    this.cursorRunnerUrl =
+      process.env.CURSOR_RUNNER_URL || "http://cursor-runner:3001";
   }
 
   /**
@@ -31,28 +32,33 @@ export class CursorRunnerService {
    */
   async executeAsync(
     request: CursorRunnerRequest,
-    callbackUrl: string
+    callbackUrl: string,
   ): Promise<CursorRunnerResponse> {
     try {
-      logger.info('Sending request to cursor-runner', {
+      logger.info("Sending request to cursor-runner", {
         conversationId: request.conversationId,
         callbackUrl,
       });
 
-      const response = await fetch(`${this.cursorRunnerUrl}/cursor/execute/async`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
+      const response = await fetch(
+        `${this.cursorRunnerUrl}/cursor/execute/async`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            ...request,
+            callbackUrl,
+          }),
         },
-        body: JSON.stringify({
-          ...request,
-          callbackUrl,
-        }),
-      });
+      );
 
       if (!response.ok) {
         const errorText = await response.text();
-        throw new Error(`Cursor-runner request failed: ${response.status} - ${errorText}`);
+        throw new Error(
+          `Cursor-runner request failed: ${response.status} - ${errorText}`,
+        );
       }
 
       const data = (await response.json()) as {
@@ -66,8 +72,9 @@ export class CursorRunnerService {
         timestamp: data.timestamp || new Date().toISOString(),
       };
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      logger.error('Failed to execute cursor-runner request', {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      logger.error("Failed to execute cursor-runner request", {
         error: errorMessage,
         request,
       });
@@ -79,23 +86,27 @@ export class CursorRunnerService {
   /**
    * Execute a cursor-runner command synchronously
    */
-  async executeSync(request: CursorRunnerRequest): Promise<CursorRunnerResponse> {
+  async executeSync(
+    request: CursorRunnerRequest,
+  ): Promise<CursorRunnerResponse> {
     try {
-      logger.info('Sending synchronous request to cursor-runner', {
+      logger.info("Sending synchronous request to cursor-runner", {
         conversationId: request.conversationId,
       });
 
       const response = await fetch(`${this.cursorRunnerUrl}/cursor/execute`, {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
         body: JSON.stringify(request),
       });
 
       if (!response.ok) {
         const errorText = await response.text();
-        throw new Error(`Cursor-runner request failed: ${response.status} - ${errorText}`);
+        throw new Error(
+          `Cursor-runner request failed: ${response.status} - ${errorText}`,
+        );
       }
 
       const data = (await response.json()) as {
@@ -113,8 +124,9 @@ export class CursorRunnerService {
         timestamp: data.timestamp || new Date().toISOString(),
       };
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      logger.error('Failed to execute cursor-runner request', {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      logger.error("Failed to execute cursor-runner request", {
         error: errorMessage,
         request,
       });
@@ -123,4 +135,3 @@ export class CursorRunnerService {
     }
   }
 }
-

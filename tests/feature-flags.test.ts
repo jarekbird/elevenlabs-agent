@@ -1,8 +1,18 @@
-import { describe, it, expect, beforeEach, afterEach, jest } from '@jest/globals';
-import { isElevenLabsEnabled, requireElevenLabsEnabled } from '../src/utils/feature-flags';
-import type { Request, Response, NextFunction } from 'express';
+import {
+  describe,
+  it,
+  expect,
+  beforeEach,
+  afterEach,
+  jest,
+} from "@jest/globals";
+import {
+  isElevenLabsEnabled,
+  requireElevenLabsEnabled,
+} from "../src/utils/feature-flags";
+import type { Request, Response, NextFunction } from "express";
 
-describe('Feature Flags', () => {
+describe("Feature Flags", () => {
   const originalEnv = process.env.ELEVENLABS_AGENT_ENABLED;
 
   beforeEach(() => {
@@ -17,40 +27,40 @@ describe('Feature Flags', () => {
     }
   });
 
-  describe('isElevenLabsEnabled', () => {
-    it('returns false when flag is not set', () => {
+  describe("isElevenLabsEnabled", () => {
+    it("returns false when flag is not set", () => {
       expect(isElevenLabsEnabled()).toBe(false);
     });
 
-    it('returns false when flag is empty string', () => {
-      process.env.ELEVENLABS_AGENT_ENABLED = '';
+    it("returns false when flag is empty string", () => {
+      process.env.ELEVENLABS_AGENT_ENABLED = "";
       expect(isElevenLabsEnabled()).toBe(false);
     });
 
     it('returns false when flag is "false"', () => {
-      process.env.ELEVENLABS_AGENT_ENABLED = 'false';
+      process.env.ELEVENLABS_AGENT_ENABLED = "false";
       expect(isElevenLabsEnabled()).toBe(false);
     });
 
     it('returns true when flag is "true"', () => {
-      process.env.ELEVENLABS_AGENT_ENABLED = 'true';
+      process.env.ELEVENLABS_AGENT_ENABLED = "true";
       expect(isElevenLabsEnabled()).toBe(true);
     });
 
     it('returns true when flag is "True" (case-insensitive)', () => {
-      process.env.ELEVENLABS_AGENT_ENABLED = 'True';
+      process.env.ELEVENLABS_AGENT_ENABLED = "True";
       expect(isElevenLabsEnabled()).toBe(true);
     });
 
     it('returns true when flag is "TRUE" (case-insensitive)', () => {
-      process.env.ELEVENLABS_AGENT_ENABLED = 'TRUE';
+      process.env.ELEVENLABS_AGENT_ENABLED = "TRUE";
       expect(isElevenLabsEnabled()).toBe(true);
     });
   });
 
-  describe('requireElevenLabsEnabled middleware', () => {
-    it('calls next() when feature is enabled', () => {
-      process.env.ELEVENLABS_AGENT_ENABLED = 'true';
+  describe("requireElevenLabsEnabled middleware", () => {
+    it("calls next() when feature is enabled", () => {
+      process.env.ELEVENLABS_AGENT_ENABLED = "true";
       const req = {} as Request;
       const res = {
         status: jest.fn().mockReturnThis(),
@@ -64,12 +74,12 @@ describe('Feature Flags', () => {
       expect(res.status).not.toHaveBeenCalled();
     });
 
-    it('returns 503 when feature is disabled', () => {
-      process.env.ELEVENLABS_AGENT_ENABLED = 'false';
+    it("returns 503 when feature is disabled", () => {
+      process.env.ELEVENLABS_AGENT_ENABLED = "false";
       const req = {
-        method: 'POST',
-        path: '/agent-tools',
-        ip: '127.0.0.1',
+        method: "POST",
+        path: "/agent-tools",
+        ip: "127.0.0.1",
       } as Request;
       const res = {
         status: jest.fn().mockReturnThis(),
@@ -82,18 +92,18 @@ describe('Feature Flags', () => {
       expect(next).not.toHaveBeenCalled();
       expect(res.status).toHaveBeenCalledWith(503);
       expect(res.json).toHaveBeenCalledWith({
-        error: 'Service Unavailable',
-        message: 'ElevenLabs agent feature is currently disabled',
+        error: "Service Unavailable",
+        message: "ElevenLabs agent feature is currently disabled",
         enabled: false,
       });
     });
 
-    it('returns 503 when flag is not set', () => {
+    it("returns 503 when flag is not set", () => {
       delete process.env.ELEVENLABS_AGENT_ENABLED;
       const req = {
-        method: 'GET',
-        path: '/signed-url',
-        ip: '127.0.0.1',
+        method: "GET",
+        path: "/signed-url",
+        ip: "127.0.0.1",
       } as Request;
       const res = {
         status: jest.fn().mockReturnThis(),
@@ -108,4 +118,3 @@ describe('Feature Flags', () => {
     });
   });
 });
-

@@ -3,7 +3,7 @@
  * Handles communication with ElevenLabs API for signed URLs and agent management
  */
 
-import { logger } from '../logger.js';
+import { logger } from "../logger.js";
 
 export interface SignedUrlResponse {
   signedUrl: string;
@@ -18,14 +18,14 @@ export interface ElevenLabsApiError {
 
 export class ElevenLabsApiClient {
   private readonly apiKey: string;
-  private readonly baseUrl: string = 'https://api.elevenlabs.io/v1';
+  private readonly baseUrl: string = "https://api.elevenlabs.io/v1";
 
   constructor() {
     const apiKey = process.env.ELEVENLABS_API_KEY;
     if (!apiKey) {
-      logger.warn('ELEVENLABS_API_KEY not set - signed URL requests will fail');
+      logger.warn("ELEVENLABS_API_KEY not set - signed URL requests will fail");
     }
-    this.apiKey = apiKey || '';
+    this.apiKey = apiKey || "";
   }
 
   /**
@@ -36,7 +36,7 @@ export class ElevenLabsApiClient {
    */
   async getSignedUrl(agentId?: string): Promise<SignedUrlResponse> {
     if (!this.apiKey) {
-      throw new Error('ELEVENLABS_API_KEY is required for signed URL requests');
+      throw new Error("ELEVENLABS_API_KEY is required for signed URL requests");
     }
 
     // Try the conversation endpoint first (newer API)
@@ -45,21 +45,24 @@ export class ElevenLabsApiClient {
       ? `${this.baseUrl}/convai/conversation/get-signed-url?agent_id=${encodeURIComponent(agentId)}`
       : `${this.baseUrl}/convai/conversation/get-signed-url`;
 
-    logger.info('Requesting signed URL from ElevenLabs', {
-      agentId: agentId || 'default',
+    logger.info("Requesting signed URL from ElevenLabs", {
+      agentId: agentId || "default",
       url,
     });
 
     // Create AbortController for timeout
     const controller = new AbortController();
-    let timeoutId: ReturnType<typeof setTimeout> | null = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+    let timeoutId: ReturnType<typeof setTimeout> | null = setTimeout(
+      () => controller.abort(),
+      30000,
+    ); // 30 second timeout
 
     try {
       const response = await fetch(url, {
-        method: 'GET',
+        method: "GET",
         headers: {
-          'xi-api-key': this.apiKey,
-          'Content-Type': 'application/json',
+          "xi-api-key": this.apiKey,
+          "Content-Type": "application/json",
         },
         signal: controller.signal,
       });
@@ -70,12 +73,14 @@ export class ElevenLabsApiClient {
       }
 
       if (!response.ok) {
-        const errorText = await response.text().catch(() => response.statusText);
-        logger.error('ElevenLabs API error', {
+        const errorText = await response
+          .text()
+          .catch(() => response.statusText);
+        logger.error("ElevenLabs API error", {
           status: response.status,
           statusText: response.statusText,
           error: errorText,
-          agentId: agentId || 'default',
+          agentId: agentId || "default",
         });
 
         let errorMessage = `ElevenLabs API error: ${response.status} ${response.statusText}`;
@@ -98,24 +103,31 @@ export class ElevenLabsApiClient {
         }
 
         // Create an Error instance with the message so it serializes properly
-        const error = new Error(errorMessage) as Error & { status?: number; code?: string };
+        const error = new Error(errorMessage) as Error & {
+          status?: number;
+          code?: string;
+        };
         error.status = response.status;
-        
+
         throw error;
       }
 
-      const data = await response.json() as Record<string, unknown>;
-      
+      const data = (await response.json()) as Record<string, unknown>;
+
       // Validate response structure
       if (!data.signed_url && !data.signedUrl) {
-        throw new Error('Invalid response from ElevenLabs API: missing signed_url');
+        throw new Error(
+          "Invalid response from ElevenLabs API: missing signed_url",
+        );
       }
 
       const signedUrl = (data.signed_url || data.signedUrl) as string;
-      const expiresAt = (data.expires_at || data.expiresAt) as string | undefined;
+      const expiresAt = (data.expires_at || data.expiresAt) as
+        | string
+        | undefined;
 
-      logger.info('Signed URL obtained from ElevenLabs', {
-        agentId: agentId || 'default',
+      logger.info("Signed URL obtained from ElevenLabs", {
+        agentId: agentId || "default",
         expiresAt,
       });
 
@@ -130,19 +142,22 @@ export class ElevenLabsApiClient {
         timeoutId = null;
       }
 
-      if (error instanceof Error && (error.name === 'AbortError' || error.message.includes('aborted'))) {
-        logger.error('ElevenLabs API request timeout', {
-          agentId: agentId || 'default',
+      if (
+        error instanceof Error &&
+        (error.name === "AbortError" || error.message.includes("aborted"))
+      ) {
+        logger.error("ElevenLabs API request timeout", {
+          agentId: agentId || "default",
         });
-        throw new Error('Request to ElevenLabs API timed out');
+        throw new Error("Request to ElevenLabs API timed out");
       }
 
       // Check if it's an Error with status property (ElevenLabsApiError)
-      if (error instanceof Error && 'status' in error) {
+      if (error instanceof Error && "status" in error) {
         // Re-throw with proper message
         const apiError = error as Error & { status?: number; code?: string };
-        logger.error('Failed to get signed URL from ElevenLabs', {
-          agentId: agentId || 'default',
+        logger.error("Failed to get signed URL from ElevenLabs", {
+          agentId: agentId || "default",
           error: apiError.message,
           status: apiError.status,
           code: apiError.code,
@@ -150,13 +165,13 @@ export class ElevenLabsApiClient {
         throw apiError;
       }
 
-      logger.error('Failed to get signed URL from ElevenLabs', {
-        agentId: agentId || 'default',
+      logger.error("Failed to get signed URL from ElevenLabs", {
+        agentId: agentId || "default",
         error: error instanceof Error ? error.message : String(error),
       });
 
       throw new Error(
-        `Failed to get signed URL: ${error instanceof Error ? error.message : String(error)}`
+        `Failed to get signed URL: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
   }
@@ -168,4 +183,3 @@ export class ElevenLabsApiClient {
     return !!this.apiKey;
   }
 }
-
